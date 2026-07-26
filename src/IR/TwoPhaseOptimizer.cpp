@@ -77,11 +77,20 @@ JoinState JoinState::apply_associativity(std::size_t idx) const {
     auto &[left1, right1] = new_state.join_pairs[idx];
     auto &[left2, right2] = new_state.join_pairs[idx + 1];
 
-    /* Check pattern (A ⋈ B) ⋈ C */
-    if (right1 == left2) {
-      /* Transform to A ⋈ (B ⋈ C) */
-      new_state.join_pairs[idx] = {left1, right2};
-      new_state.join_pairs[idx + 1] = {right1, left2};
+    if (left2 == (left1 | right1)) {
+      /* Pattern (X ⋈ Y) ⋈ Z -> X ⋈ (Y ⋈ Z) */
+      Subproblem X = left1;
+      Subproblem Y = right1;
+      Subproblem Z = right2;
+      new_state.join_pairs[idx] = {Y, Z};
+      new_state.join_pairs[idx + 1] = {X, Y | Z};
+    } else if (right2 == (left1 | right1)) {
+      /* Pattern Z ⋈ (X ⋈ Y) -> (Z ⋈ X) ⋈ Y */
+      Subproblem Z = left2;
+      Subproblem X = left1;
+      Subproblem Y = right1;
+      new_state.join_pairs[idx] = {Z, X};
+      new_state.join_pairs[idx + 1] = {Z | X, Y};
     }
   }
 
@@ -247,7 +256,10 @@ double TwoPhaseOptimizer::compute_state_cost(
          subproblem */
       PT.update(G, CE, CF, left, right, condition);
     }
-    total_cost += PT[left | right].cost;
+    /* Calculate the local cost of this specific join to accurately reflect
+       this state's energy, rather than relying on the globally optimal PT cost. */
+    double local_cost = CF.calculate_join_cost(G, PT, CE, left, right, condition) - PT[left].cost - PT[right].cost;
+    total_cost += local_cost;
   }
 
   return total_cost;
